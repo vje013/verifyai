@@ -526,7 +526,7 @@ footer {
       <span><span class="status-dot"></span>Backend online</span>
       <span>granite-4-h-small</span>
       <span>deepteam v0.2.7</span>
-      <span>CMMC 2.0 L2</span>
+      <span id="header-framework">CMMC 2.0 L2</span>
     </div>
   </header>
 
@@ -596,7 +596,7 @@ footer {
 
     <div class="card" id="card-deepteam">
       <div class="card-header">
-        <div class="card-title"><div class="card-step">03</div>Safety Posture · CMMC 2.0 L2</div>
+        <div class="card-title"><div class="card-step">03</div>Safety Posture · <span id="framework-label">CMMC 2.0 L2</span></div>
         <div class="badge pending" id="badge-deepteam">PENDING</div>
       </div>
       <div id="status-deepteam"></div>
@@ -623,6 +623,9 @@ footer {
 </div>
 
 <script>
+// ─── Framework default ─────────────────────────────────────────────────────
+const FRAMEWORK = 'CMMC 2.0 L2';
+
 const API = {
   parse:    'https://vje013--verifyai-backend-parse-workflow.modal.run',
   webarena: 'https://vje013--verifyai-backend-run-webarena.modal.run',
@@ -655,7 +658,6 @@ async function loadModels() {
     const models = data.models || [];
     if (!models.length) throw new Error('empty list');
 
-    // Build dropdown
     sel.innerHTML = '<option value="">openai/gpt-4o-mini (default)</option>';
     for (const m of models) {
       const opt = document.createElement('option');
@@ -729,6 +731,7 @@ function renderSpec(spec) {
     <div class="spec-list">
       <div class="spec-row"><div class="spec-key">Agent role</div><div class="spec-val">${escapeHtml(spec.agent_role)}</div></div>
       <div class="spec-row"><div class="spec-key">Target model</div><div class="spec-val"><code>${escapeHtml(spec.target_model || 'openai/gpt-4o-mini')}</code></div></div>
+      <div class="spec-row"><div class="spec-key">Framework</div><div class="spec-val"><code>${escapeHtml(spec.framework || FRAMEWORK)}</code></div></div>
       <div class="spec-row"><div class="spec-key">System prompt</div><div class="spec-val" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-dim); line-height: 1.5;">${escapeHtml(spec.agent_system_prompt || '(default)')}</div></div>
       <div class="spec-row"><div class="spec-key">Steps</div><div class="spec-val">${spec.workflow_steps.map(s => escapeHtml(s)).join(' → ')}</div></div>
       <div class="spec-row"><div class="spec-key">Sensitive data</div><div class="spec-val">${spec.sensitive_data.map(s => `<code>${escapeHtml(s)}</code>`).join(' ')}</div></div>
@@ -761,41 +764,45 @@ function renderWebarena(result) {
 function renderDeepteam(result) {
   const rate = result.pass_rate;
   const cls = rateClass(rate);
+  const framework = result.framework || FRAMEWORK;
+  document.getElementById('framework-label').textContent = framework;
+
   const rows = result.findings.map(f => `
     <tr>
       <td>${escapeHtml(f.vulnerability)}</td>
       <td class="mono">${escapeHtml(f.attack)}</td>
       <td>
-        <span class="cmmc-cell">${escapeHtml(f.cmmc_control || 'n/a')}</span>
-        <span class="cmmc-title">${escapeHtml(f.cmmc_title || '')}</span>
+        <span class="cmmc-cell">${escapeHtml(f.control_id || 'n/a')}</span>
+        <span class="cmmc-title">${escapeHtml(f.control_title || '')}</span>
       </td>
       <td><span class="pill ${f.passed ? 'pass' : 'fail'}">${f.passed ? 'BLOCKED' : 'LEAKED'}</span></td>
     </tr>`).join('');
   
-  const controls = result.cmmc_controls_tested || [];
+  const controls = result.controls_tested || [];
   const chips = controls.length > 0 ?
     `<div class="cmmc-chip-row">${controls.map(c => `<span class="cmmc-chip">${escapeHtml(c)}</span>`).join('')}</div>` : '';
 
   document.getElementById('body-deepteam').innerHTML = `
     <div class="metric-row">
       <div class="metric-value ${cls}">${(rate*100).toFixed(0)}%</div>
-      <div class="metric-label">mitigation rate · ${result.total} adversarial probes · ${controls.length} CMMC controls tested</div>
+      <div class="metric-label">mitigation rate · ${result.total} adversarial probes · ${controls.length} ${escapeHtml(framework)} controls tested</div>
     </div>
     ${chips}
     <table style="margin-top: 14px;">
-      <thead><tr><th>Vulnerability</th><th>Attack</th><th>CMMC 2.0 Control</th><th>Result</th></tr></thead>
+      <thead><tr><th>Vulnerability</th><th>Attack</th><th>${escapeHtml(framework)} Control</th><th>Result</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   return cls;
 }
 
-function renderSummary(text, controls) {
+function renderSummary(text, controls, framework) {
+  const fw = framework || FRAMEWORK;
   const chips = controls && controls.length > 0 ?
     `<div class="cmmc-chip-row">${controls.map(c => `<span class="cmmc-chip">${escapeHtml(c)}</span>`).join('')}</div>` : '';
   document.getElementById('body-summary').innerHTML = `
     <div class="summary-text">${escapeHtml(text)}</div>
     ${chips}
-    <div class="summary-byline">Generated by VerifyAI · granite-4-h-small · CMMC 2.0 Level 2 audit-aligned</div>`;
+    <div class="summary-byline">Generated by VerifyAI · granite-4-h-small · ${escapeHtml(fw)} audit-aligned</div>`;
 }
 
 // ─── Main orchestration ────────────────────────────────────────────────────
@@ -826,6 +833,7 @@ async function runSweep() {
       if (evt.type === 'done') { 
         spec = evt.data; 
         if (targetModel) spec.target_model = targetModel;
+        spec.framework = FRAMEWORK;
         renderSpec(spec); 
         clearStatus('spec'); 
         setCardDone('spec', 'pass'); 
@@ -847,7 +855,7 @@ async function runSweep() {
     let sf_result = null;
     await streamPost(API.deepteam, { spec }, evt => {
       if (evt.type === 'status') pushStatus('deepteam', evt.data);
-      if (evt.type === 'finding') pushStatus('deepteam', `${evt.data.cmmc_control}: ${evt.data.attack} → ${evt.data.passed ? 'BLOCKED' : 'LEAKED'}`);
+      if (evt.type === 'finding') pushStatus('deepteam', `${evt.data.control_id}: ${evt.data.attack} → ${evt.data.passed ? 'BLOCKED' : 'LEAKED'}`);
       if (evt.type === 'error') pushStatus('deepteam', `Error: ${evt.data}`);
       if (evt.type === 'done') { sf_result = evt.data; const cls = renderDeepteam(sf_result); clearStatus('deepteam'); setCardDone('deepteam', cls); }
     });
@@ -857,7 +865,7 @@ async function runSweep() {
     setCardActive('summary');
     await streamPost(API.report, { spec, wf_result, sf_result }, evt => {
       if (evt.type === 'status') pushStatus('summary', evt.data);
-      if (evt.type === 'done') { renderSummary(evt.data.summary, evt.data.cmmc_controls_tested); clearStatus('summary'); setCardDone('summary', 'pass'); }
+      if (evt.type === 'done') { renderSummary(evt.data.summary, evt.data.controls_tested, evt.data.framework); clearStatus('summary'); setCardDone('summary', 'pass'); }
     });
 
   } catch (err) {
